@@ -1,0 +1,74 @@
+package {
+    default_applicable_licenses: ["hardware_floral_display_license"],
+}
+
+license {
+    name: "hardware_floral_display_license",
+    visibility: [":__subpackages__"],
+    license_kinds: ["SPDX-license-identifier-Apache-2.0"],
+    license_text: ["LICENSE"],
+}
+
+cc_defaults {
+    name: "floral_display_common_defaults",
+    cflags: [
+        "-Wall",
+        "-Werror",
+        "-Wextra",
+        "-Wthread-safety",
+    ],
+    cpp_std: "c++17",
+    local_include_dirs: ["include"],
+}
+
+cc_library_static {
+    name: "libfloral_display_core",
+    defaults: ["floral_display_common_defaults"],
+    vendor_available: true,
+    srcs: [
+        "src/DisplayTopology.cpp",
+        "src/Edid.cpp",
+        "src/VsyncThread.cpp",
+    ],
+    export_include_dirs: ["include"],
+}
+
+cc_defaults {
+    name: "floral_display_hwc2_defaults",
+    defaults: ["floral_display_common_defaults"],
+    shared_libs: [
+        "libbase",
+        "libhardware",
+        "liblog",
+    ],
+    static_libs: ["libfloral_display_core"],
+}
+
+cc_library_shared {
+    name: "hwcomposer.floral",
+    defaults: ["floral_display_hwc2_defaults"],
+    vendor: true,
+    relative_install_path: "hw",
+    srcs: [
+        "src/Display.cpp",
+        "src/DisplayRegistry.cpp",
+        "src/HwcDevice.cpp",
+        "src/Layer.cpp",
+        "src/Module.cpp",
+    ],
+}
+
+cc_test {
+    name: "floral_display_tests",
+    defaults: ["floral_display_hwc2_defaults"],
+    vendor: true,
+    srcs: [
+        "src/Display.cpp",
+        "src/DisplayRegistry.cpp",
+        "src/Layer.cpp",
+        "tests/DisplayRegistryTest.cpp",
+        "tests/DisplayTopologyTest.cpp",
+        "tests/EdidTest.cpp",
+    ],
+    test_suites: ["device-tests"],
+}
