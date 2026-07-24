@@ -19,7 +19,9 @@
 #include <pthread.h>
 #include <time.h>
 
+#include <algorithm>
 #include <chrono>
+#include <optional>
 #include <utility>
 
 namespace floral::display {
@@ -42,7 +44,7 @@ VsyncThread::~VsyncThread() {
     {
         std::lock_guard lock(mutex_);
         stopped_ = true;
-        ++generation_;
+        ++wake_generation_;
     }
     condition_.notify_all();
     if (thread_.joinable()) {
@@ -57,7 +59,8 @@ void VsyncThread::SetEnabled(bool enabled) {
             return;
         }
         enabled_ = enabled;
-        ++generation_;
+        ++wake_generation_;
+        ++period_generation_;
     }
     condition_.notify_all();
 }
@@ -65,11 +68,27 @@ void VsyncThread::SetEnabled(bool enabled) {
 void VsyncThread::SetPeriod(int64_t periodNanos) {
     {
         std::lock_guard lock(mutex_);
-        if (period_nanos_ == periodNanos) {
+        if (period_nanos_ == periodNanos && !period_change_pending_) {
             return;
         }
         period_nanos_ = periodNanos;
-        ++generation_;
+        period_change_pending_ = false;
+        period_applied_callback_ = {};
+        ++wake_generation_;
+        ++period_generation_;
+    }
+    condition_.notify_all();
+}
+
+void VsyncThread::SetPeriodAt(int64_t periodNanos, int64_t applyTimeNanos,
+                              PeriodAppliedCallback callback) {
+    {
+        std::lock_guard lock(mutex_);
+        period_change_pending_ = true;
+        pending_period_nanos_ = periodNanos;
+        pending_apply_time_nanos_ = applyTimeNanos;
+        period_applied_callback_ = std::move(callback);
+        ++wake_generation_;
     }
     condition_.notify_all();
 }
@@ -78,27 +97,73 @@ void VsyncThread::ThreadMain() {
     pthread_setname_np(pthread_self(), "floral-vsync");
 
     std::unique_lock lock(mutex_);
+    uint64_t observedPeriodGeneration = period_generation_;
+    std::optional<std::chrono::steady_clock::time_point> nextVsync;
     while (!stopped_) {
-        condition_.wait(lock, [this] { return stopped_ || enabled_; });
-        if (stopped_) {
-            break;
+        if (observedPeriodGeneration != period_generation_) {
+            nextVsync.reset();
+            observedPeriodGeneration = period_generation_;
         }
 
-        uint64_t observedGeneration = generation_;
-        auto nextDeadline = std::chrono::steady_clock::now();
-        while (!stopped_ && enabled_ && observedGeneration == generation_) {
-            const int64_t periodNanos = period_nanos_;
-            nextDeadline += std::chrono::nanoseconds(periodNanos);
+        const int64_t nowNanos = MonotonicNanos();
+        if (period_change_pending_ && nowNanos >= pending_apply_time_nanos_) {
+            period_nanos_ = pending_period_nanos_;
+            period_change_pending_ = false;
+            PeriodAppliedCallback appliedCallback = std::move(period_applied_callback_);
+            period_applied_callback_ = {};
+            ++period_generation_;
+            ++wake_generation_;
 
-            const bool interrupted =
-                    condition_.wait_until(lock, nextDeadline, [this, observedGeneration] {
-                        return stopped_ || !enabled_ || generation_ != observedGeneration;
-                    });
-            if (interrupted) {
-                break;
+            const int64_t appliedPeriod = period_nanos_;
+            lock.unlock();
+            if (appliedCallback) {
+                appliedCallback(appliedPeriod);
             }
+            lock.lock();
+            continue;
+        }
 
+        const auto steadyNow = std::chrono::steady_clock::now();
+        if (!enabled_) {
+            nextVsync.reset();
+        } else if (!nextVsync.has_value()) {
+            nextVsync = steadyNow + std::chrono::nanoseconds(period_nanos_);
+        }
+
+        std::optional<std::chrono::steady_clock::time_point> wakeTime = nextVsync;
+        if (period_change_pending_) {
+            const int64_t delayNanos = std::max<int64_t>(0, pending_apply_time_nanos_ - nowNanos);
+            const auto periodChangeTime = steadyNow + std::chrono::nanoseconds(delayNanos);
+            if (!wakeTime.has_value() || periodChangeTime < *wakeTime) {
+                wakeTime = periodChangeTime;
+            }
+        }
+
+        const uint64_t observedWakeGeneration = wake_generation_;
+        if (!wakeTime.has_value()) {
+            condition_.wait(lock, [this, observedWakeGeneration] {
+                return stopped_ || wake_generation_ != observedWakeGeneration;
+            });
+            continue;
+        }
+
+        const bool interrupted =
+                condition_.wait_until(lock, *wakeTime, [this, observedWakeGeneration] {
+                    return stopped_ || wake_generation_ != observedWakeGeneration;
+                });
+        if (interrupted || stopped_) {
+            continue;
+        }
+
+        if (period_change_pending_ && MonotonicNanos() >= pending_apply_time_nanos_) {
+            continue;
+        }
+
+        if (nextVsync.has_value() && std::chrono::steady_clock::now() >= *nextVsync) {
+            const int64_t periodNanos = period_nanos_;
             const Callback callback = callback_;
+            nextVsync = *nextVsync + std::chrono::nanoseconds(periodNanos);
+
             lock.unlock();
             if (callback) {
                 callback(MonotonicNanos(), periodNanos);
@@ -108,8 +173,8 @@ void VsyncThread::ThreadMain() {
             // Resume from the current monotonic time after a long scheduler
             // stall instead of emitting a burst of stale VSync callbacks.
             const auto now = std::chrono::steady_clock::now();
-            if (nextDeadline + std::chrono::nanoseconds(periodNanos) < now) {
-                nextDeadline = now;
+            if (*nextVsync + std::chrono::nanoseconds(periodNanos) < now) {
+                nextVsync = now + std::chrono::nanoseconds(periodNanos);
             }
         }
     }

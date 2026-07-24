@@ -49,6 +49,7 @@ class Display {
     hwc2_display_t id() const { return static_cast<hwc2_display_t>(config_.id); }
     uint8_t port() const { return config_.port; }
 
+    // Core composition and display queries.
     int32_t AcceptDisplayChanges();
     int32_t CreateLayer(hwc2_layer_t* outLayer);
     int32_t DestroyLayer(hwc2_layer_t layer);
@@ -66,6 +67,8 @@ class Display {
     int32_t GetHdrCapabilities(uint32_t* outNumTypes, int32_t* outTypes, float* outMaxLuminance,
                                float* outMaxAverageLuminance, float* outMinLuminance);
     int32_t GetReleaseFences(uint32_t* outNumElements, hwc2_layer_t* outLayers, int32_t* outFences);
+
+    // Presentation and display controls.
     int32_t PresentDisplay(int32_t* outPresentFence);
     int32_t SetActiveConfig(hwc2_config_t config);
     int32_t SetClientTarget(buffer_handle_t target, int32_t acquireFence, int32_t dataspace,
@@ -76,6 +79,8 @@ class Display {
     int32_t SetPowerMode(int32_t mode);
     int32_t SetVsyncEnabled(int32_t enabled);
     int32_t ValidateDisplay(uint32_t* outNumTypes, uint32_t* outNumRequests);
+
+    // Composer 2.4 capabilities and constrained mode switching.
     int32_t GetClientTargetSupport(uint32_t width, uint32_t height, int32_t format,
                                    int32_t dataspace);
     int32_t GetDisplayIdentificationData(uint8_t* outPort, uint32_t* outDataSize, uint8_t* outData);
@@ -88,6 +93,7 @@ class Display {
                                            hwc_vsync_period_change_constraints_t* constraints,
                                            hwc_vsync_period_change_timeline_t* outTimeline);
 
+    // Layer state updates.
     int32_t SetCursorPosition(hwc2_layer_t layer, int32_t x, int32_t y);
     int32_t SetLayerBuffer(hwc2_layer_t layer, buffer_handle_t buffer, int32_t acquireFence);
     int32_t SetLayerSurfaceDamage(hwc2_layer_t layer, hwc_region_t damage);
@@ -103,30 +109,60 @@ class Display {
     int32_t SetLayerVisibleRegion(hwc2_layer_t layer, hwc_region_t visible);
     int32_t SetLayerZOrder(hwc2_layer_t layer, uint32_t z);
 
+    // Diagnostics.
     std::string Dump() const;
 
   private:
+    struct Mode {
+        hwc2_config_t id;
+        int64_t vsync_period_nanos;
+    };
+
+    static std::vector<Mode> BuildModes(const DisplayConfig& config);
+    static hwc2_config_t FindInitialConfig(const std::vector<Mode>& modes,
+                                           int64_t initialVsyncPeriodNanos);
+    const Mode* FindMode(hwc2_config_t config) const;
+    void ApplyActiveConfigLocked(hwc2_config_t config, const Mode& mode);
+    void ApplyActiveConfigLocked(hwc2_config_t config, const Mode& mode, int64_t applyTimeNanos);
+
+    FrameSubmission TakeFrameSubmissionLocked();
+
     Layer* FindLayerLocked(hwc2_layer_t layer);
     int32_t RequireLayerLocked(hwc2_layer_t layer);
 
-    static constexpr hwc2_config_t kConfigId = 0;
-
+    // Immutable display description and advertised modes.
     const DisplayConfig config_;
+    const std::vector<Mode> modes_;
     const EdidBlock edid_;
+
+    // Mutable display state synchronization.
     mutable std::mutex mutex_;
+
+    // Display mode and power state.
+    hwc2_config_t active_config_ = 0;
+    int64_t current_vsync_period_nanos_ = 0;
+    uint64_t config_change_generation_ = 0;
+    int32_t power_mode_ = HWC2_POWER_MODE_ON;
+
+    // Layer registry and composition state.
     std::unordered_map<hwc2_layer_t, std::unique_ptr<Layer>> layers_;
     std::vector<std::pair<hwc2_layer_t, int32_t>> type_changes_;
     hwc2_layer_t next_layer_id_ = 1;
     bool validated_ = false;
-    int32_t power_mode_ = HWC2_POWER_MODE_ON;
+
+    // Client target submitted by SurfaceFlinger.
     buffer_handle_t client_target_ = nullptr;
     android::base::unique_fd client_target_acquire_fence_;
     int32_t client_target_dataspace_ = 0;
     std::vector<DamageRect> client_target_damage_;
-    std::unique_ptr<FrameSink> frame_sink_;
+
+    // Frame delivery pipeline and presentation statistics.
     uint64_t next_frame_sequence_ = 1;
     uint64_t validate_count_ = 0;
     uint64_t present_count_ = 0;
+    std::unique_ptr<FrameSink> frame_sink_;
+
+    // Vsync scheduling worker.
     VsyncThread vsync_thread_;
 };
 

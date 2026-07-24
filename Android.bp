@@ -34,6 +34,7 @@ cc_library_static {
         "libcutils_headers",
     ],
     srcs: [
+        "src/DisplayConfig.cpp",
         "src/DisplayTopology.cpp",
         "src/Edid.cpp",
         "src/FrameSink.cpp",
@@ -75,7 +76,9 @@ cc_test {
         "src/Display.cpp",
         "src/DisplayRegistry.cpp",
         "src/Layer.cpp",
+        "tests/DisplayConfigTest.cpp",
         "tests/DisplayFrameSinkTest.cpp",
+        "tests/DisplayRefreshRateTest.cpp",
         "tests/DisplayRegistryTest.cpp",
         "tests/DisplayTopologyTest.cpp",
         "tests/EdidTest.cpp",

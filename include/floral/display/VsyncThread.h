@@ -27,6 +27,7 @@ namespace floral::display {
 class VsyncThread {
   public:
     using Callback = std::function<void(int64_t timestampNanos, int64_t periodNanos)>;
+    using PeriodAppliedCallback = std::function<void(int64_t periodNanos)>;
 
     VsyncThread(int64_t periodNanos, Callback callback);
     ~VsyncThread();
@@ -36,6 +37,7 @@ class VsyncThread {
 
     void SetEnabled(bool enabled);
     void SetPeriod(int64_t periodNanos);
+    void SetPeriodAt(int64_t periodNanos, int64_t applyTimeNanos, PeriodAppliedCallback callback);
 
   private:
     void ThreadMain();
@@ -44,9 +46,14 @@ class VsyncThread {
     std::condition_variable condition_;
     int64_t period_nanos_;
     Callback callback_;
+    bool period_change_pending_ = false;
+    int64_t pending_period_nanos_ = 0;
+    int64_t pending_apply_time_nanos_ = 0;
+    PeriodAppliedCallback period_applied_callback_;
     bool enabled_ = false;
     bool stopped_ = false;
-    uint64_t generation_ = 0;
+    uint64_t wake_generation_ = 0;
+    uint64_t period_generation_ = 0;
     std::thread thread_;
 };
 

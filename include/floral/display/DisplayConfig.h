@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace floral::display {
 
@@ -28,6 +29,10 @@ enum class ConnectionType : uint8_t {
     kExternal,
 };
 
+int64_t RefreshRateToVsyncPeriodNanos(uint32_t refreshRateHz);
+uint32_t SelectRefreshRateAtLeast(const std::vector<uint32_t>& supportedRefreshRatesHz,
+                                  uint32_t requestedRefreshRateHz);
+
 // This descriptor is independent of HIDL and AIDL Composer types so each
 // Android-version frontend can consume the same display identity and modes.
 struct DisplayConfig {
@@ -37,6 +42,7 @@ struct DisplayConfig {
     uint32_t height = 1080;
     uint32_t dpi = 320;
     int64_t vsync_period_nanos = 16'666'667;
+    std::vector<uint32_t> supported_refresh_rates_hz;
     ConnectionType connection_type = ConnectionType::kInternal;
     std::string name = "Floral Internal Display";
 };

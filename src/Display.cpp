@@ -48,18 +48,116 @@ bool IsKnownCompositionType(int32_t type) {
 
 }  // namespace
 
+// Construction and mode helpers.
+
 Display::Display(DisplayConfig config, VsyncCallback vsyncCallback,
                  std::unique_ptr<FrameSink> frameSink)
     : config_(std::move(config)),
+      modes_(BuildModes(config_)),
       edid_(BuildEdid(config_.port, config_.name)),
+      active_config_(FindInitialConfig(modes_, config_.vsync_period_nanos)),
+      current_vsync_period_nanos_(modes_[active_config_].vsync_period_nanos),
       frame_sink_(frameSink ? std::move(frameSink) : CreatePassthroughFrameSink()),
-      vsync_thread_(config_.vsync_period_nanos,
+      vsync_thread_(current_vsync_period_nanos_,
                     [id = config_.id, callback = std::move(vsyncCallback)](int64_t timestamp,
                                                                            int64_t period) {
                         if (callback) {
                             callback(id, timestamp, period);
                         }
                     }) {}
+
+std::vector<Display::Mode> Display::BuildModes(const DisplayConfig& config) {
+    std::vector<int64_t> periods;
+    periods.reserve(config.supported_refresh_rates_hz.size() + 1);
+    for (const uint32_t refreshRateHz : config.supported_refresh_rates_hz) {
+        const int64_t periodNanos = RefreshRateToVsyncPeriodNanos(refreshRateHz);
+        if (periodNanos > 0) {
+            periods.push_back(periodNanos);
+        }
+    }
+    if (config.vsync_period_nanos > 0) {
+        periods.push_back(config.vsync_period_nanos);
+    }
+    if (periods.empty()) {
+        periods.push_back(RefreshRateToVsyncPeriodNanos(60));
+    }
+
+    // Slower modes receive lower config IDs so adding a faster mode does not
+    // renumber the established low-power configurations.
+    std::sort(periods.begin(), periods.end(), std::greater<int64_t>());
+    periods.erase(std::unique(periods.begin(), periods.end()), periods.end());
+
+    std::vector<Mode> modes;
+    modes.reserve(periods.size());
+    for (size_t index = 0; index < periods.size(); ++index) {
+        modes.push_back({static_cast<hwc2_config_t>(index), periods[index]});
+    }
+    return modes;
+}
+
+hwc2_config_t Display::FindInitialConfig(const std::vector<Mode>& modes,
+                                         int64_t initialVsyncPeriodNanos) {
+    const auto found =
+            std::find_if(modes.begin(), modes.end(), [initialVsyncPeriodNanos](auto mode) {
+                return mode.vsync_period_nanos == initialVsyncPeriodNanos;
+            });
+    return found == modes.end() ? modes.back().id : found->id;
+}
+
+const Display::Mode* Display::FindMode(hwc2_config_t config) const {
+    if (config >= modes_.size()) {
+        return nullptr;
+    }
+    return &modes_[config];
+}
+
+void Display::ApplyActiveConfigLocked(hwc2_config_t config, const Mode& mode) {
+    active_config_ = config;
+    current_vsync_period_nanos_ = mode.vsync_period_nanos;
+    ++config_change_generation_;
+    vsync_thread_.SetPeriod(mode.vsync_period_nanos);
+}
+
+void Display::ApplyActiveConfigLocked(hwc2_config_t config, const Mode& mode,
+                                      int64_t applyTimeNanos) {
+    if (current_vsync_period_nanos_ == mode.vsync_period_nanos) {
+        ApplyActiveConfigLocked(config, mode);
+        return;
+    }
+
+    active_config_ = config;
+    const uint64_t generation = ++config_change_generation_;
+    vsync_thread_.SetPeriodAt(mode.vsync_period_nanos, applyTimeNanos,
+                              [this, generation](int64_t periodNanos) {
+                                  std::lock_guard callbackLock(mutex_);
+                                  if (generation == config_change_generation_) {
+                                      current_vsync_period_nanos_ = periodNanos;
+                                  }
+                              });
+}
+
+FrameSubmission Display::TakeFrameSubmissionLocked() {
+    FrameSubmission submission;
+    submission.display_id = config_.id;
+    submission.width = config_.width;
+    submission.height = config_.height;
+    submission.buffer = client_target_;
+    submission.acquire_fence = std::move(client_target_acquire_fence_);
+    submission.dataspace = client_target_dataspace_;
+    submission.damage = std::move(client_target_damage_);
+    submission.sequence = next_frame_sequence_++;
+    submission.submission_time_nanos = MonotonicNanos();
+
+    client_target_ = nullptr;
+    client_target_acquire_fence_.reset();
+    client_target_dataspace_ = 0;
+    client_target_damage_.clear();
+    validated_ = false;
+    ++present_count_;
+    return submission;
+}
+
+// Core composition and display queries.
 
 int32_t Display::AcceptDisplayChanges() {
     std::lock_guard lock(mutex_);
@@ -105,7 +203,8 @@ int32_t Display::GetActiveConfig(hwc2_config_t* outConfig) {
     if (outConfig == nullptr) {
         return HWC2_ERROR_BAD_PARAMETER;
     }
-    *outConfig = kConfigId;
+    std::lock_guard lock(mutex_);
+    *outConfig = active_config_;
     return HWC2_ERROR_NONE;
 }
 
@@ -154,7 +253,8 @@ int32_t Display::GetDisplayAttribute(hwc2_config_t config, int32_t attribute, in
     if (outValue == nullptr) {
         return HWC2_ERROR_BAD_PARAMETER;
     }
-    if (config != kConfigId) {
+    const Mode* mode = FindMode(config);
+    if (mode == nullptr) {
         return HWC2_ERROR_BAD_CONFIG;
     }
 
@@ -166,7 +266,7 @@ int32_t Display::GetDisplayAttribute(hwc2_config_t config, int32_t attribute, in
             *outValue = static_cast<int32_t>(config_.height);
             break;
         case HWC2_ATTRIBUTE_VSYNC_PERIOD:
-            *outValue = static_cast<int32_t>(config_.vsync_period_nanos);
+            *outValue = static_cast<int32_t>(mode->vsync_period_nanos);
             break;
         case HWC2_ATTRIBUTE_DPI_X:
         case HWC2_ATTRIBUTE_DPI_Y:
@@ -186,15 +286,14 @@ int32_t Display::GetDisplayConfigs(uint32_t* outNumConfigs, hwc2_config_t* outCo
         return HWC2_ERROR_BAD_PARAMETER;
     }
     if (outConfigs == nullptr) {
-        *outNumConfigs = 1;
+        *outNumConfigs = static_cast<uint32_t>(modes_.size());
         return HWC2_ERROR_NONE;
     }
-    if (*outNumConfigs > 0) {
-        outConfigs[0] = kConfigId;
-        *outNumConfigs = 1;
-    } else {
-        *outNumConfigs = 0;
+    const uint32_t count = std::min<uint32_t>(*outNumConfigs, static_cast<uint32_t>(modes_.size()));
+    for (uint32_t index = 0; index < count; ++index) {
+        outConfigs[index] = modes_[index].id;
     }
+    *outNumConfigs = count;
     return HWC2_ERROR_NONE;
 }
 
@@ -275,42 +374,35 @@ int32_t Display::GetReleaseFences(uint32_t* outNumElements, hwc2_layer_t* outLay
     return HWC2_ERROR_NONE;
 }
 
+// Presentation and display controls.
+
 int32_t Display::PresentDisplay(int32_t* outPresentFence) {
     if (outPresentFence == nullptr) {
         return HWC2_ERROR_BAD_PARAMETER;
     }
     FrameSubmission submission;
-    FrameSink* frameSink = nullptr;
     {
         std::lock_guard lock(mutex_);
         if (!validated_ || !type_changes_.empty()) {
             return HWC2_ERROR_NOT_VALIDATED;
         }
 
-        submission.display_id = config_.id;
-        submission.width = config_.width;
-        submission.height = config_.height;
-        submission.buffer = client_target_;
-        submission.acquire_fence = std::move(client_target_acquire_fence_);
-        submission.dataspace = client_target_dataspace_;
-        submission.damage = std::move(client_target_damage_);
-        submission.sequence = next_frame_sequence_++;
-        submission.submission_time_nanos = MonotonicNanos();
-
-        client_target_ = nullptr;
-        client_target_dataspace_ = 0;
-        validated_ = false;
-        ++present_count_;
-        frameSink = frame_sink_.get();
+        submission = TakeFrameSubmissionLocked();
     }
 
-    FrameSinkResult result = frameSink->Submit(std::move(submission));
+    FrameSinkResult result = frame_sink_->Submit(std::move(submission));
     *outPresentFence = result.present_fence.release();
     return HWC2_ERROR_NONE;
 }
 
 int32_t Display::SetActiveConfig(hwc2_config_t config) {
-    return config == kConfigId ? HWC2_ERROR_NONE : HWC2_ERROR_BAD_CONFIG;
+    const Mode* mode = FindMode(config);
+    if (mode == nullptr) {
+        return HWC2_ERROR_BAD_CONFIG;
+    }
+    std::lock_guard lock(mutex_);
+    ApplyActiveConfigLocked(config, *mode);
+    return HWC2_ERROR_NONE;
 }
 
 int32_t Display::SetClientTarget(buffer_handle_t target, int32_t acquireFence, int32_t dataspace,
@@ -393,6 +485,8 @@ int32_t Display::ValidateDisplay(uint32_t* outNumTypes, uint32_t* outNumRequests
     return type_changes_.empty() ? HWC2_ERROR_NONE : HWC2_ERROR_HAS_CHANGES;
 }
 
+// Composer 2.4 capabilities and constrained mode switching.
+
 int32_t Display::GetClientTargetSupport(uint32_t width, uint32_t height, int32_t format,
                                         int32_t dataspace) {
     (void)dataspace;
@@ -458,7 +552,8 @@ int32_t Display::GetDisplayVsyncPeriod(hwc2_vsync_period_t* outVsyncPeriod) {
     if (outVsyncPeriod == nullptr) {
         return HWC2_ERROR_BAD_PARAMETER;
     }
-    *outVsyncPeriod = config_.vsync_period_nanos;
+    std::lock_guard lock(mutex_);
+    *outVsyncPeriod = current_vsync_period_nanos_;
     return HWC2_ERROR_NONE;
 }
 
@@ -468,17 +563,25 @@ int32_t Display::SetActiveConfigWithConstraints(hwc2_config_t config,
     if (constraints == nullptr || outTimeline == nullptr) {
         return HWC2_ERROR_BAD_PARAMETER;
     }
-    if (config != kConfigId) {
+    const Mode* mode = FindMode(config);
+    if (mode == nullptr) {
         return HWC2_ERROR_BAD_CONFIG;
     }
 
-    // There is one fixed mode, so the requested config is already active.
-    outTimeline->newVsyncAppliedTimeNanos =
-            std::max<int64_t>(MonotonicNanos(), constraints->desiredTimeNanos);
+    const int64_t nowNanos = MonotonicNanos();
+    const int64_t applyTimeNanos = std::max<int64_t>(nowNanos, constraints->desiredTimeNanos);
+    {
+        std::lock_guard lock(mutex_);
+        ApplyActiveConfigLocked(config, *mode, applyTimeNanos);
+    }
+
+    outTimeline->newVsyncAppliedTimeNanos = applyTimeNanos;
     outTimeline->refreshRequired = false;
     outTimeline->refreshTimeNanos = 0;
     return HWC2_ERROR_NONE;
 }
+
+// Layer state updates.
 
 int32_t Display::SetCursorPosition(hwc2_layer_t layer, int32_t x, int32_t y) {
     (void)x;
@@ -584,6 +687,8 @@ int32_t Display::SetLayerZOrder(hwc2_layer_t layer, uint32_t z) {
     return HWC2_ERROR_NONE;
 }
 
+// Diagnostics and private helpers.
+
 std::string Display::Dump() const {
     std::lock_guard lock(mutex_);
     const FrameSinkStats sinkStats = frame_sink_->GetStats();
@@ -593,8 +698,14 @@ std::string Display::Dump() const {
     output << "Display " << config_.id << " (port " << static_cast<uint32_t>(config_.port) << ")\n"
            << "  name: " << config_.name << "\n"
            << "  connection: " << connection << "\n"
+           << "  active_config: " << active_config_ << "\n"
            << "  mode: " << config_.width << 'x' << config_.height << " @ "
-           << (1'000'000'000.0 / config_.vsync_period_nanos) << " Hz\n"
+           << (1'000'000'000.0 / current_vsync_period_nanos_) << " Hz\n"
+           << "  supported_refresh_rates:";
+    for (const Mode& mode : modes_) {
+        output << ' ' << (1'000'000'000.0 / mode.vsync_period_nanos);
+    }
+    output << " Hz\n"
            << "  layers: " << layers_.size() << "\n"
            << "  validate_count: " << validate_count_ << "\n"
            << "  present_count: " << present_count_ << "\n"

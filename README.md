@@ -10,7 +10,7 @@ path.
 
 - Composer/HWC2 2.4 dispatch surface.
 - One permanent `INTERNAL` physical display on port 0.
-- One 1920x1080@60 configuration by default.
+- One 1920x1080 internal display with 15, 30, and 60 Hz configurations.
 - CLIENT composition only.
 - Monotonic VSync generation.
 - Stable Floral EDID identity.
@@ -33,7 +33,11 @@ ro.boot.redroid_dpi
 ```
 
 Values are validated before use. Phase one caps the advertised refresh rate at
-60 Hz.
+60 Hz. A requested boot frame rate selects the lowest advertised refresh rate
+that is not lower than the request, such as 24 FPS selecting 30 Hz and 45 FPS
+selecting 60 Hz. All refresh configurations remain in one config group, so the
+resolution, internal-display identity, and Android logical display remain
+unchanged during a switch.
 
 ## Build integration
 
