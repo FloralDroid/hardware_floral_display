@@ -14,7 +14,14 @@ path.
 - CLIENT composition only.
 - Monotonic VSync generation.
 - Stable Floral EDID identity.
+- FrameSink submission with sequence, dataspace, damage, and fence metadata.
 - No virtual displays, readback, protected-content claim, encoder, or socket.
+
+The initial `PassthroughFrameSink` does not read the client target. It transfers
+the client-target acquire fence directly to the HWC present fence, which keeps
+the ownership chain asynchronous without adding a wait to the Composer call
+path. A later MediaCodec sink can consume the same submissions and replace that
+fence with one tied to its actual GPU or encoder work.
 
 The module reads the existing redroid boot properties when present:
 

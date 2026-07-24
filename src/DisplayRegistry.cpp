@@ -21,11 +21,15 @@
 
 namespace floral::display {
 
-DisplayRegistry::DisplayRegistry(DisplayConfig primaryConfig, Display::VsyncCallback vsyncCallback)
+DisplayRegistry::DisplayRegistry(DisplayConfig primaryConfig, Display::VsyncCallback vsyncCallback,
+                                 FrameSinkFactory frameSinkFactory)
     : topology_(std::move(primaryConfig)) {
     for (DisplayConfig config : topology_.ConnectedDisplays()) {
         const hwc2_display_t id = static_cast<hwc2_display_t>(config.id);
-        displays_.emplace(id, std::make_unique<Display>(std::move(config), vsyncCallback));
+        std::unique_ptr<FrameSink> frameSink =
+                frameSinkFactory ? frameSinkFactory(config) : CreatePassthroughFrameSink();
+        displays_.emplace(id, std::make_unique<Display>(std::move(config), vsyncCallback,
+                                                        std::move(frameSink)));
     }
 }
 

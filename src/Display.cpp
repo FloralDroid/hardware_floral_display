@@ -48,9 +48,11 @@ bool IsKnownCompositionType(int32_t type) {
 
 }  // namespace
 
-Display::Display(DisplayConfig config, VsyncCallback vsyncCallback)
+Display::Display(DisplayConfig config, VsyncCallback vsyncCallback,
+                 std::unique_ptr<FrameSink> frameSink)
     : config_(std::move(config)),
       edid_(BuildEdid(config_.port, config_.name)),
+      frame_sink_(frameSink ? std::move(frameSink) : CreatePassthroughFrameSink()),
       vsync_thread_(config_.vsync_period_nanos,
                     [id = config_.id, callback = std::move(vsyncCallback)](int64_t timestamp,
                                                                            int64_t period) {
@@ -277,20 +279,33 @@ int32_t Display::PresentDisplay(int32_t* outPresentFence) {
     if (outPresentFence == nullptr) {
         return HWC2_ERROR_BAD_PARAMETER;
     }
-    std::lock_guard lock(mutex_);
-    if (!validated_ || !type_changes_.empty()) {
-        return HWC2_ERROR_NOT_VALIDATED;
+    FrameSubmission submission;
+    FrameSink* frameSink = nullptr;
+    {
+        std::lock_guard lock(mutex_);
+        if (!validated_ || !type_changes_.empty()) {
+            return HWC2_ERROR_NOT_VALIDATED;
+        }
+
+        submission.display_id = config_.id;
+        submission.width = config_.width;
+        submission.height = config_.height;
+        submission.buffer = client_target_;
+        submission.acquire_fence = std::move(client_target_acquire_fence_);
+        submission.dataspace = client_target_dataspace_;
+        submission.damage = std::move(client_target_damage_);
+        submission.sequence = next_frame_sequence_++;
+        submission.submission_time_nanos = MonotonicNanos();
+
+        client_target_ = nullptr;
+        client_target_dataspace_ = 0;
+        validated_ = false;
+        ++present_count_;
+        frameSink = frame_sink_.get();
     }
 
-    // The phase-one sink does not read the client target. Closing its acquire
-    // fence and returning no present fence immediately releases HWC ownership.
-    // The encoder phase must replace this with a fence tied to actual buffer
-    // consumption before it starts reading the target.
-    client_target_acquire_fence_.reset();
-    client_target_ = nullptr;
-    validated_ = false;
-    ++present_count_;
-    *outPresentFence = -1;
+    FrameSinkResult result = frameSink->Submit(std::move(submission));
+    *outPresentFence = result.present_fence.release();
     return HWC2_ERROR_NONE;
 }
 
@@ -300,11 +315,23 @@ int32_t Display::SetActiveConfig(hwc2_config_t config) {
 
 int32_t Display::SetClientTarget(buffer_handle_t target, int32_t acquireFence, int32_t dataspace,
                                  hwc_region_t damage) {
-    (void)dataspace;
-    (void)damage;
+    android::base::unique_fd ownedFence(acquireFence);
+    if (damage.numRects > 0 && damage.rects == nullptr) {
+        return HWC2_ERROR_BAD_PARAMETER;
+    }
+
+    std::vector<DamageRect> copiedDamage;
+    copiedDamage.reserve(damage.numRects);
+    for (size_t index = 0; index < damage.numRects; ++index) {
+        const hwc_rect_t& rect = damage.rects[index];
+        copiedDamage.push_back({rect.left, rect.top, rect.right, rect.bottom});
+    }
+
     std::lock_guard lock(mutex_);
     client_target_ = target;
-    client_target_acquire_fence_.reset(acquireFence);
+    client_target_acquire_fence_ = std::move(ownedFence);
+    client_target_dataspace_ = dataspace;
+    client_target_damage_ = std::move(copiedDamage);
     return HWC2_ERROR_NONE;
 }
 
@@ -559,6 +586,7 @@ int32_t Display::SetLayerZOrder(hwc2_layer_t layer, uint32_t z) {
 
 std::string Display::Dump() const {
     std::lock_guard lock(mutex_);
+    const FrameSinkStats sinkStats = frame_sink_->GetStats();
     std::ostringstream output;
     const char* connection =
             config_.connection_type == ConnectionType::kInternal ? "INTERNAL" : "EXTERNAL";
@@ -570,6 +598,15 @@ std::string Display::Dump() const {
            << "  layers: " << layers_.size() << "\n"
            << "  validate_count: " << validate_count_ << "\n"
            << "  present_count: " << present_count_ << "\n"
+           << "  frame_sink: " << frame_sink_->Name() << "\n"
+           << "  submitted_frames: " << sinkStats.submitted_frames << "\n"
+           << "  frames_with_buffer: " << sinkStats.frames_with_buffer << "\n"
+           << "  frames_with_acquire_fence: " << sinkStats.frames_with_acquire_fence << "\n"
+           << "  returned_present_fences: " << sinkStats.returned_present_fences << "\n"
+           << "  last_frame_sequence: " << sinkStats.last_sequence << "\n"
+           << "  last_submission_time_nanos: " << sinkStats.last_submission_time_nanos << "\n"
+           << "  last_dataspace: " << sinkStats.last_dataspace << "\n"
+           << "  last_damage_rect_count: " << sinkStats.last_damage_rect_count << "\n"
            << "  raw_frame_export: disabled\n"
            << "  protected_content: unsupported\n";
     return output.str();

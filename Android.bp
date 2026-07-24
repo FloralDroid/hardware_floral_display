@@ -25,9 +25,18 @@ cc_library_static {
     name: "libfloral_display_core",
     defaults: ["floral_display_common_defaults"],
     vendor_available: true,
+    header_libs: [
+        "libbase_headers",
+        "libcutils_headers",
+    ],
+    export_header_lib_headers: [
+        "libbase_headers",
+        "libcutils_headers",
+    ],
     srcs: [
         "src/DisplayTopology.cpp",
         "src/Edid.cpp",
+        "src/FrameSink.cpp",
         "src/VsyncThread.cpp",
     ],
     export_include_dirs: ["include"],
@@ -66,9 +75,11 @@ cc_test {
         "src/Display.cpp",
         "src/DisplayRegistry.cpp",
         "src/Layer.cpp",
+        "tests/DisplayFrameSinkTest.cpp",
         "tests/DisplayRegistryTest.cpp",
         "tests/DisplayTopologyTest.cpp",
         "tests/EdidTest.cpp",
+        "tests/FrameSinkTest.cpp",
     ],
     test_suites: ["device-tests"],
 }

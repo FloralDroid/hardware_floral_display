@@ -29,6 +29,7 @@
 
 #include "floral/display/DisplayConfig.h"
 #include "floral/display/Edid.h"
+#include "floral/display/FrameSink.h"
 #include "floral/display/Layer.h"
 #include "floral/display/VsyncThread.h"
 
@@ -38,7 +39,8 @@ class Display {
   public:
     using VsyncCallback = std::function<void(hwc2_display_t, int64_t, int64_t)>;
 
-    Display(DisplayConfig config, VsyncCallback vsyncCallback);
+    Display(DisplayConfig config, VsyncCallback vsyncCallback,
+            std::unique_ptr<FrameSink> frameSink);
     ~Display() = default;
 
     Display(const Display&) = delete;
@@ -119,6 +121,10 @@ class Display {
     int32_t power_mode_ = HWC2_POWER_MODE_ON;
     buffer_handle_t client_target_ = nullptr;
     android::base::unique_fd client_target_acquire_fence_;
+    int32_t client_target_dataspace_ = 0;
+    std::vector<DamageRect> client_target_damage_;
+    std::unique_ptr<FrameSink> frame_sink_;
+    uint64_t next_frame_sequence_ = 1;
     uint64_t validate_count_ = 0;
     uint64_t present_count_ = 0;
     VsyncThread vsync_thread_;

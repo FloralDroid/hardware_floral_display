@@ -18,6 +18,7 @@
 
 #include <hardware/hwcomposer2.h>
 
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -30,10 +31,13 @@ namespace floral::display {
 
 class DisplayRegistry {
   public:
+    using FrameSinkFactory = std::function<std::unique_ptr<FrameSink>(const DisplayConfig& config)>;
+
     static constexpr hwc2_display_t kPrimaryDisplayId =
             static_cast<hwc2_display_t>(DisplayTopology::kPrimaryDisplayId);
 
-    DisplayRegistry(DisplayConfig primaryConfig, Display::VsyncCallback vsyncCallback);
+    DisplayRegistry(DisplayConfig primaryConfig, Display::VsyncCallback vsyncCallback,
+                    FrameSinkFactory frameSinkFactory = {});
     ~DisplayRegistry() = default;
 
     DisplayRegistry(const DisplayRegistry&) = delete;
