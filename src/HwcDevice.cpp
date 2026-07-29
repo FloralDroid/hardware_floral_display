@@ -17,6 +17,8 @@
 #define LOG_TAG "hwcomposer.floral"
 
 #include "floral/display/HwcDevice.h"
+#include "floral/display/AidlFrameConsumerEndpoint.h"
+#include "floral/display/GraphicBufferClientTargetResolver.h"
 
 #include <android-base/properties.h>
 #include <log/log.h>
@@ -327,10 +329,22 @@ HwcDevice::HwcDevice() {
         return HwcDevice::From(device)->GetFunction(descriptor);
     };
 
+    DisplayConfig primaryConfig = LoadPrimaryDisplayConfig();
+    AidlFrameConsumerEndpointConfig endpointConfig;
+    endpointConfig.display_ids = {primaryConfig.id};
+    const std::shared_ptr<FrameConsumerEndpoint> consumer =
+            CreateAidlFrameConsumerEndpoint(std::move(endpointConfig));
+    const std::shared_ptr<ClientTargetResolver> targetResolver =
+            CreateGraphicBufferClientTargetResolver();
+
     registry_ = std::make_unique<DisplayRegistry>(
-            LoadPrimaryDisplayConfig(),
+            std::move(primaryConfig),
             [this](hwc2_display_t display, int64_t timestamp, int64_t period) {
                 EmitVsync(display, timestamp, period);
+            },
+            [consumer, targetResolver](const DisplayConfig& config) {
+                (void)config;
+                return CreateStreamFrameSink(consumer, targetResolver);
             });
 }
 
@@ -499,7 +513,7 @@ std::string HwcDevice::Dump() const {
             "Floral HWC2.4\n"
             "  virtual_displays: unsupported\n"
             "  readback: unsupported\n"
-            "  encoding: detached\n";
+            "  encoding: external FrameSink service\n";
     if (registry_ != nullptr) {
         for (const hwc2_display_t id : registry_->ConnectedDisplayIds()) {
             Display* display = registry_->Get(id);

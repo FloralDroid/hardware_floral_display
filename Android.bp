@@ -21,6 +21,12 @@ cc_defaults {
     local_include_dirs: ["include"],
 }
 
+cc_library_headers {
+    name: "floral_display_gralloc_metadata_headers",
+    vendor_available: true,
+    export_include_dirs: ["include"],
+}
+
 cc_library_static {
     name: "libfloral_display_core",
     defaults: ["floral_display_common_defaults"],
@@ -43,6 +49,35 @@ cc_library_static {
     export_include_dirs: ["include"],
 }
 
+cc_library_static {
+    name: "libfloral_display_stream_bridge",
+    defaults: ["floral_display_common_defaults"],
+    vendor_available: true,
+    header_libs: [
+        "floral_display_gralloc_metadata_headers",
+        "libbase_headers",
+        "libcutils_headers",
+        "libhardware_headers",
+    ],
+    srcs: [
+        "src/AidlFrameConsumerEndpoint.cpp",
+        "src/GraphicBufferClientTargetResolver.cpp",
+        "src/StreamFrameSink.cpp",
+    ],
+    static_libs: [
+        "libaidlcommonsupport",
+    ],
+    shared_libs: [
+        "android.hardware.common-V2-ndk_platform",
+        "android.hardware.graphics.common-V2-ndk_platform",
+        "floral.stream.display-V1-ndk_platform",
+        "libbinder_ndk",
+        "libcutils",
+        "libui",
+    ],
+    export_include_dirs: ["include"],
+}
+
 cc_defaults {
     name: "floral_display_hwc2_defaults",
     defaults: ["floral_display_common_defaults"],
@@ -59,6 +94,18 @@ cc_library_shared {
     defaults: ["floral_display_hwc2_defaults"],
     vendor: true,
     relative_install_path: "hw",
+    static_libs: [
+        "libaidlcommonsupport",
+        "libfloral_display_stream_bridge",
+    ],
+    shared_libs: [
+        "android.hardware.common-V2-ndk_platform",
+        "android.hardware.graphics.common-V2-ndk_platform",
+        "floral.stream.display-V1-ndk_platform",
+        "libbinder_ndk",
+        "libcutils",
+        "libui",
+    ],
     srcs: [
         "src/Display.cpp",
         "src/DisplayRegistry.cpp",
@@ -72,10 +119,24 @@ cc_test {
     name: "floral_display_tests",
     defaults: ["floral_display_hwc2_defaults"],
     vendor: true,
+    static_libs: [
+        "libaidlcommonsupport",
+        "libfloral_display_stream_bridge",
+    ],
+    shared_libs: [
+        "android.hardware.common-V2-ndk_platform",
+        "android.hardware.graphics.common-V2-ndk_platform",
+        "floral.stream.display-V1-ndk_platform",
+        "libbinder_ndk",
+        "libcutils",
+        "libnativewindow",
+        "libui",
+    ],
     srcs: [
         "src/Display.cpp",
         "src/DisplayRegistry.cpp",
         "src/Layer.cpp",
+        "tests/AidlFrameConsumerEndpointTest.cpp",
         "tests/DisplayConfigTest.cpp",
         "tests/DisplayFrameSinkTest.cpp",
         "tests/DisplayRefreshRateTest.cpp",
@@ -83,6 +144,8 @@ cc_test {
         "tests/DisplayTopologyTest.cpp",
         "tests/EdidTest.cpp",
         "tests/FrameSinkTest.cpp",
+        "tests/GraphicBufferClientTargetResolverTest.cpp",
+        "tests/StreamFrameSinkTest.cpp",
     ],
     test_suites: ["device-tests"],
 }

@@ -15,13 +15,17 @@ path.
 - Monotonic VSync generation.
 - Stable Floral EDID identity.
 - FrameSink submission with sequence, dataspace, damage, and fence metadata.
-- No virtual displays, readback, protected-content claim, encoder, or socket.
+- No virtual displays, readback, or protected-content claim.
 
-The initial `PassthroughFrameSink` does not read the client target. It transfers
-the client-target acquire fence directly to the HWC present fence, which keeps
-the ownership chain asynchronous without adding a wait to the Composer call
-path. A later MediaCodec sink can consume the same submissions and replace that
-fence with one tied to its actual GPU or encoder work.
+The production HWC uses `StreamFrameSink` to connect to FloralStream through a
+versioned AIDL endpoint. Until the service advertises an active generation, the
+sink passes through the client-target acquire fence. Protected client targets
+remain local to the display path and are never registered with the stream service.
+
+`libfloral_display_stream_bridge` keeps that boundary behind injectable
+consumer and client-target resolver interfaces. Its tests cover generation-scoped
+buffer registration, drop fallback, protected-buffer rejection, and release-fence
+ownership. Encoding and socket transport remain outside the Composer module.
 
 The module reads the existing redroid boot properties when present:
 
