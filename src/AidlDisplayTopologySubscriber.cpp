@@ -20,9 +20,9 @@
 
 #include "floral/display/DisplayRegistry.h"
 
-#include <aidl/floral/display/topology/BnDisplayTopologyListener.h>
-#include <aidl/floral/display/topology/PhysicalDisplaySpec.h>
-#include <aidl/floral/display/topology/TopologySnapshot.h>
+#include <aidl/floral/device/display/topology/BnDisplayTopologyListener.h>
+#include <aidl/floral/device/display/topology/PhysicalDisplaySpec.h>
+#include <aidl/floral/device/display/topology/TopologySnapshot.h>
 #include <android/binder_manager.h>
 #include <android/binder_process.h>
 #include <log/log.h>

@@ -18,9 +18,9 @@
 
 #include "floral/display/DisplayRegistry.h"
 
-#include <aidl/floral/display/topology/BnDisplayTopologyState.h>
-#include <aidl/floral/display/topology/PhysicalDisplaySpec.h>
-#include <aidl/floral/display/topology/TopologySnapshot.h>
+#include <aidl/floral/device/display/topology/BnDisplayTopologyState.h>
+#include <aidl/floral/device/display/topology/PhysicalDisplaySpec.h>
+#include <aidl/floral/device/display/topology/TopologySnapshot.h>
 #include <gtest/gtest.h>
 
 #include <atomic>

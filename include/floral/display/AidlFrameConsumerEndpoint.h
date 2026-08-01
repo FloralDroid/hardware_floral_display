@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <aidl/floral/stream/display/IFrameConsumer.h>
+#include <aidl/floral/device/display/IFrameConsumer.h>
 
 #include <chrono>
 #include <functional>
@@ -29,7 +29,7 @@
 namespace floral::display {
 
 inline constexpr char kDefaultFrameConsumerService[] =
-        "floral.stream.display.IFrameConsumer/default";
+        "floral.device.display.IFrameConsumer/default";
 
 struct AidlFrameConsumerEndpointConfig {
     std::string service_name = kDefaultFrameConsumerService;
@@ -38,7 +38,7 @@ struct AidlFrameConsumerEndpointConfig {
 
     // Tests may provide a deterministic connector. Production uses the
     // service manager when this callback is empty.
-    std::function<std::shared_ptr<aidl::floral::stream::display::IFrameConsumer>(
+    std::function<std::shared_ptr<aidl::floral::device::display::IFrameConsumer>(
             const std::string& serviceName)>
             connector;
 };

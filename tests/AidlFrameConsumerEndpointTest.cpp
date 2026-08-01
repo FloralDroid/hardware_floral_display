@@ -16,7 +16,7 @@
 
 #include "floral/display/AidlFrameConsumerEndpoint.h"
 
-#include <aidl/floral/stream/display/BnFrameConsumer.h>
+#include <aidl/floral/device/display/BnFrameConsumer.h>
 #include <fcntl.h>
 #include <gtest/gtest.h>
 #include <unistd.h>
@@ -30,12 +30,12 @@
 namespace floral::display {
 namespace {
 
-using AidlFrameStatus = aidl::floral::stream::display::FrameStatus;
+using AidlFrameStatus = aidl::floral::device::display::FrameStatus;
 
-class FakeAidlFrameConsumer final : public aidl::floral::stream::display::BnFrameConsumer {
+class FakeAidlFrameConsumer final : public aidl::floral::device::display::BnFrameConsumer {
   public:
     ndk::ScopedAStatus getStreamState(int64_t displayId,
-                                      aidl::floral::stream::display::StreamState* result) override {
+                                      aidl::floral::device::display::StreamState* result) override {
         std::lock_guard lock(mutex_);
         result->displayId = displayId;
         result->generation = generation_;
@@ -44,7 +44,7 @@ class FakeAidlFrameConsumer final : public aidl::floral::stream::display::BnFram
     }
 
     ndk::ScopedAStatus registerBuffer(
-            const aidl::floral::stream::display::BufferRegistration& registration,
+            const aidl::floral::device::display::BufferRegistration& registration,
             AidlFrameStatus* result) override {
         std::lock_guard lock(mutex_);
         ++register_count_;
@@ -55,8 +55,8 @@ class FakeAidlFrameConsumer final : public aidl::floral::stream::display::BnFram
         return ndk::ScopedAStatus::ok();
     }
 
-    ndk::ScopedAStatus submitFrame(const aidl::floral::stream::display::FrameRequest& request,
-                                   aidl::floral::stream::display::FrameResult* result) override {
+    ndk::ScopedAStatus submitFrame(const aidl::floral::device::display::FrameRequest& request,
+                                   aidl::floral::device::display::FrameResult* result) override {
         std::lock_guard lock(mutex_);
         ++submit_count_;
         last_source_sequence_ = request.sourceSequence;

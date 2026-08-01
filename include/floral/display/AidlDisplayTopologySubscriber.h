@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <aidl/floral/display/topology/IDisplayTopologyState.h>
+#include <aidl/floral/device/display/topology/IDisplayTopologyState.h>
 
 #include <chrono>
 #include <functional>
@@ -28,7 +28,7 @@ namespace floral::display {
 class DisplayRegistry;
 
 inline constexpr char kDefaultDisplayTopologyStateService[] =
-        "floral.display.topology.IDisplayTopologyState/default";
+        "floral.device.display.topology.IDisplayTopologyState/default";
 
 struct AidlDisplayTopologySubscriberConfig {
     std::string service_name = kDefaultDisplayTopologyStateService;

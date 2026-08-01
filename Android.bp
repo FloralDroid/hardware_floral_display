@@ -70,7 +70,7 @@ cc_library_static {
     shared_libs: [
         "android.hardware.common-V2-ndk_platform",
         "android.hardware.graphics.common-V2-ndk_platform",
-        "floral.stream.display-V1-ndk_platform",
+        "floral.device.display-V1-ndk_platform",
         "libbinder_ndk",
         "libcutils",
         "libui",
@@ -91,7 +91,7 @@ cc_library_static {
         "src/AidlDisplayTopologySubscriber.cpp",
     ],
     shared_libs: [
-        "floral.display.topology-V1-ndk_platform",
+        "floral.device.display.topology-V1-ndk_platform",
         "libbinder_ndk",
         "liblog",
     ],
@@ -122,8 +122,8 @@ cc_library_shared {
     shared_libs: [
         "android.hardware.common-V2-ndk_platform",
         "android.hardware.graphics.common-V2-ndk_platform",
-        "floral.display.topology-V1-ndk_platform",
-        "floral.stream.display-V1-ndk_platform",
+        "floral.device.display.topology-V1-ndk_platform",
+        "floral.device.display-V1-ndk_platform",
         "libbinder_ndk",
         "libcutils",
         "libui",
@@ -149,8 +149,8 @@ cc_test {
     shared_libs: [
         "android.hardware.common-V2-ndk_platform",
         "android.hardware.graphics.common-V2-ndk_platform",
-        "floral.display.topology-V1-ndk_platform",
-        "floral.stream.display-V1-ndk_platform",
+        "floral.device.display.topology-V1-ndk_platform",
+        "floral.device.display-V1-ndk_platform",
         "libbinder_ndk",
         "libcutils",
         "libnativewindow",

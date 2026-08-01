@@ -18,11 +18,11 @@
 
 #include <aidl/android/hardware/graphics/common/BufferUsage.h>
 #include <aidl/android/hardware/graphics/common/PixelFormat.h>
-#include <aidl/floral/stream/display/BufferRegistration.h>
-#include <aidl/floral/stream/display/FrameRequest.h>
-#include <aidl/floral/stream/display/FrameResult.h>
-#include <aidl/floral/stream/display/FrameStatus.h>
-#include <aidl/floral/stream/display/StreamState.h>
+#include <aidl/floral/device/display/BufferRegistration.h>
+#include <aidl/floral/device/display/FrameRequest.h>
+#include <aidl/floral/device/display/FrameResult.h>
+#include <aidl/floral/device/display/FrameStatus.h>
+#include <aidl/floral/device/display/StreamState.h>
 #include <aidlcommonsupport/NativeHandle.h>
 #include <android/binder_manager.h>
 
@@ -40,8 +40,8 @@ namespace floral::display {
 namespace {
 
 using AidlBufferUsage = aidl::android::hardware::graphics::common::BufferUsage;
-using AidlFrameConsumer = aidl::floral::stream::display::IFrameConsumer;
-using AidlFrameStatus = aidl::floral::stream::display::FrameStatus;
+using AidlFrameConsumer = aidl::floral::device::display::IFrameConsumer;
+using AidlFrameStatus = aidl::floral::device::display::FrameStatus;
 using AidlPixelFormat = aidl::android::hardware::graphics::common::PixelFormat;
 
 bool FitsInt32(uint32_t value) {
@@ -135,7 +135,7 @@ class AidlFrameConsumerEndpoint final : public FrameConsumerEndpoint {
             return FrameConsumerStatus::kUnsupportedBuffer;
         }
 
-        aidl::floral::stream::display::BufferRegistration request;
+        aidl::floral::device::display::BufferRegistration request;
         request.displayId = static_cast<int64_t>(registration.display_id);
         request.generation = static_cast<int32_t>(registration.generation);
         request.bufferId = static_cast<int64_t>(registration.buffer_id);
@@ -170,7 +170,7 @@ class AidlFrameConsumerEndpoint final : public FrameConsumerEndpoint {
             return result;
         }
 
-        aidl::floral::stream::display::FrameRequest aidlRequest;
+        aidl::floral::device::display::FrameRequest aidlRequest;
         aidlRequest.displayId = static_cast<int64_t>(request.display_id);
         aidlRequest.generation = static_cast<int32_t>(request.generation);
         aidlRequest.bufferId = static_cast<int64_t>(request.buffer_id);
@@ -180,7 +180,7 @@ class AidlFrameConsumerEndpoint final : public FrameConsumerEndpoint {
         aidlRequest.dataspace = request.dataspace;
         aidlRequest.acquireFence = ndk::ScopedFileDescriptor(request.acquire_fence.release());
 
-        aidl::floral::stream::display::FrameResult aidlResult;
+        aidl::floral::device::display::FrameResult aidlResult;
         if (!consumer->submitFrame(aidlRequest, &aidlResult).isOk()) {
             Disconnect(consumer);
             result.status = FrameConsumerStatus::kNoActiveStream;
@@ -235,7 +235,7 @@ class AidlFrameConsumerEndpoint final : public FrameConsumerEndpoint {
 
             if (consumer != nullptr) {
                 for (DisplayId displayId : config_.display_ids) {
-                    aidl::floral::stream::display::StreamState state;
+                    aidl::floral::device::display::StreamState state;
                     if (!FitsInt64(displayId) ||
                         !consumer->getStreamState(static_cast<int64_t>(displayId), &state).isOk()) {
                         Disconnect(consumer);

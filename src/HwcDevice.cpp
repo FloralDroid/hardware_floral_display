@@ -543,13 +543,13 @@ std::string HwcDevice::Dump() const {
 
 DisplayConfig HwcDevice::LoadPrimaryDisplayConfig() {
     DisplayConfig config;
-    config.width = BoundedProperty("ro.boot.redroid_width", 1920, 320, 7680);
-    config.height = BoundedProperty("ro.boot.redroid_height", 1080, 320, 4320);
+    config.width = BoundedProperty("ro.boot.floral_width", 1920, 320, 7680);
+    config.height = BoundedProperty("ro.boot.floral_height", 1080, 320, 4320);
     config.supported_refresh_rates_hz = {15, 30, 60};
-    const uint32_t requestedFramesPerSecond = BoundedProperty("ro.boot.redroid_fps", 60, 1, 60);
+    const uint32_t requestedFramesPerSecond = BoundedProperty("ro.boot.floral_fps", 60, 1, 60);
     const uint32_t selectedFramesPerSecond =
             SelectRefreshRateAtLeast(config.supported_refresh_rates_hz, requestedFramesPerSecond);
-    config.dpi = BoundedProperty("ro.boot.redroid_dpi", 320, 72, 640);
+    config.dpi = BoundedProperty("ro.boot.floral_dpi", 320, 72, 640);
     config.vsync_period_nanos = RefreshRateToVsyncPeriodNanos(selectedFramesPerSecond);
     return config;
 }
