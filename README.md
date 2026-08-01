@@ -27,6 +27,20 @@ consumer and client-target resolver interfaces. Its tests cover generation-scope
 buffer registration, drop fallback, protected-buffer rejection, and release-fence
 ownership. Encoding and socket transport remain outside the Composer module.
 
+The version-independent topology core can connect and disconnect additional
+physical external displays while preserving the permanent primary identity.
+Registry lookups retain shared display ownership so an in-flight HWC call can
+finish safely after a hot-unplug. The Android 12 frontend subscribes to the
+container-internal `floral.display.topology` VINTF AIDL service. Each increasing
+generation replaces the complete external-display snapshot; removal or a
+configuration change emits disconnect events before new display objects and
+connect events become visible. The primary display is implicit in HWC and
+cannot be removed or renumbered by the service. Hotplug callback installation
+shares the same ordering boundary as topology mutations, so the initial
+connected snapshot cannot race later events. If the topology service remains
+unavailable, HWC retains the last external snapshot for the bounded
+`ro.boot.floral_control_disconnect_lease_ms` interval and then removes it.
+
 The module reads the existing redroid boot properties when present:
 
 ```text

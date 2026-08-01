@@ -23,20 +23,107 @@ namespace floral::display {
 
 DisplayRegistry::DisplayRegistry(DisplayConfig primaryConfig, Display::VsyncCallback vsyncCallback,
                                  FrameSinkFactory frameSinkFactory)
-    : topology_(std::move(primaryConfig)) {
+    : topology_(std::move(primaryConfig)),
+      vsync_callback_(std::move(vsyncCallback)),
+      frame_sink_factory_(std::move(frameSinkFactory)) {
     for (DisplayConfig config : topology_.ConnectedDisplays()) {
         const hwc2_display_t id = static_cast<hwc2_display_t>(config.id);
-        std::unique_ptr<FrameSink> frameSink =
-                frameSinkFactory ? frameSinkFactory(config) : CreatePassthroughFrameSink();
-        displays_.emplace(id, std::make_unique<Display>(std::move(config), vsyncCallback,
-                                                        std::move(frameSink)));
+        displays_.emplace(id, CreateDisplay(std::move(config)));
     }
 }
 
-Display* DisplayRegistry::Get(hwc2_display_t id) const {
+std::shared_ptr<Display> DisplayRegistry::Get(hwc2_display_t id) const {
     std::lock_guard lock(mutex_);
     const auto found = displays_.find(id);
-    return found == displays_.end() ? nullptr : found->second.get();
+    return found == displays_.end() ? nullptr : found->second;
+}
+
+void DisplayRegistry::SetHotplugCallback(HotplugCallback hotplugCallback) {
+    std::lock_guard hotplugLock(hotplug_mutex_);
+    hotplug_callback_ = std::move(hotplugCallback);
+    if (!hotplug_callback_) {
+        return;
+    }
+
+    // Installing the callback and publishing the initial snapshot share the
+    // same ordering boundary as later topology mutations.
+    for (const hwc2_display_t id : ConnectedDisplayIds()) {
+        hotplug_callback_(id, true);
+    }
+}
+
+DisplayTopologyResult DisplayRegistry::ConnectExternal(DisplayConfig config) {
+    std::lock_guard hotplugLock(hotplug_mutex_);
+    const DisplayConfig displayConfig = config;
+    const DisplayTopologyResult result = topology_.ConnectExternal(std::move(config));
+    if (result != DisplayTopologyResult::kSuccess) {
+        return result;
+    }
+
+    const hwc2_display_t id = static_cast<hwc2_display_t>(displayConfig.id);
+    std::shared_ptr<Display> display = CreateDisplay(displayConfig);
+    {
+        std::lock_guard lock(mutex_);
+        displays_.emplace(id, std::move(display));
+    }
+    if (hotplug_callback_) {
+        hotplug_callback_(id, true);
+    }
+    return DisplayTopologyResult::kSuccess;
+}
+
+DisplayTopologyResult DisplayRegistry::Disconnect(hwc2_display_t id) {
+    std::lock_guard hotplugLock(hotplug_mutex_);
+    const DisplayTopologyResult result = topology_.Disconnect(static_cast<DisplayId>(id));
+    if (result != DisplayTopologyResult::kSuccess) {
+        return result;
+    }
+
+    {
+        std::lock_guard lock(mutex_);
+        displays_.erase(id);
+    }
+    if (hotplug_callback_) {
+        hotplug_callback_(id, false);
+    }
+    return DisplayTopologyResult::kSuccess;
+}
+
+DisplayTopologyResult DisplayRegistry::ReplaceExternalDisplays(std::vector<DisplayConfig> configs) {
+    std::lock_guard hotplugLock(hotplug_mutex_);
+    DisplayTopologyChanges changes;
+    const DisplayTopologyResult result =
+            topology_.ReplaceExternalDisplays(std::move(configs), &changes);
+    if (result != DisplayTopologyResult::kSuccess) {
+        return result;
+    }
+
+    std::vector<std::pair<hwc2_display_t, std::shared_ptr<Display>>> connectedDisplays;
+    connectedDisplays.reserve(changes.connected_displays.size());
+    for (DisplayConfig& config : changes.connected_displays) {
+        const hwc2_display_t id = static_cast<hwc2_display_t>(config.id);
+        connectedDisplays.emplace_back(id, CreateDisplay(std::move(config)));
+    }
+
+    for (DisplayId id : changes.disconnected_display_ids) {
+        {
+            std::lock_guard lock(mutex_);
+            displays_.erase(static_cast<hwc2_display_t>(id));
+        }
+        if (hotplug_callback_) {
+            hotplug_callback_(static_cast<hwc2_display_t>(id), false);
+        }
+    }
+    for (auto& [id, display] : connectedDisplays) {
+        {
+            std::lock_guard lock(mutex_);
+            displays_.insert_or_assign(id, std::move(display));
+        }
+        if (hotplug_callback_) {
+            hotplug_callback_(id, true);
+        }
+    }
+    return DisplayTopologyResult::kSuccess;
 }
 
 std::vector<hwc2_display_t> DisplayRegistry::ConnectedDisplayIds() const {
@@ -49,6 +136,15 @@ std::vector<hwc2_display_t> DisplayRegistry::ConnectedDisplayIds() const {
     }
     std::sort(ids.begin(), ids.end());
     return ids;
+}
+
+std::shared_ptr<Display> DisplayRegistry::CreateDisplay(DisplayConfig config) const {
+    std::unique_ptr<FrameSink> frameSink =
+            frame_sink_factory_ ? frame_sink_factory_(config) : CreatePassthroughFrameSink();
+    if (frameSink == nullptr) {
+        frameSink = CreatePassthroughFrameSink();
+    }
+    return std::make_shared<Display>(std::move(config), vsync_callback_, std::move(frameSink));
 }
 
 }  // namespace floral::display

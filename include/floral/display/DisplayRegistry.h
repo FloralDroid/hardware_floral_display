@@ -32,6 +32,7 @@ namespace floral::display {
 class DisplayRegistry {
   public:
     using FrameSinkFactory = std::function<std::unique_ptr<FrameSink>(const DisplayConfig& config)>;
+    using HotplugCallback = std::function<void(hwc2_display_t display, bool connected)>;
 
     static constexpr hwc2_display_t kPrimaryDisplayId =
             static_cast<hwc2_display_t>(DisplayTopology::kPrimaryDisplayId);
@@ -43,13 +44,25 @@ class DisplayRegistry {
     DisplayRegistry(const DisplayRegistry&) = delete;
     DisplayRegistry& operator=(const DisplayRegistry&) = delete;
 
-    Display* Get(hwc2_display_t id) const;
+    std::shared_ptr<Display> Get(hwc2_display_t id) const;
+    void SetHotplugCallback(HotplugCallback hotplugCallback);
+    DisplayTopologyResult ConnectExternal(DisplayConfig config);
+    DisplayTopologyResult Disconnect(hwc2_display_t id);
+    DisplayTopologyResult ReplaceExternalDisplays(std::vector<DisplayConfig> configs);
     std::vector<hwc2_display_t> ConnectedDisplayIds() const;
 
   private:
+    std::shared_ptr<Display> CreateDisplay(DisplayConfig config) const;
+
     DisplayTopology topology_;
+    Display::VsyncCallback vsync_callback_;
+    FrameSinkFactory frame_sink_factory_;
+    HotplugCallback hotplug_callback_;
+
+    // Serializes topology mutations with their matching hotplug notification.
+    std::mutex hotplug_mutex_;
     mutable std::mutex mutex_;
-    std::unordered_map<hwc2_display_t, std::unique_ptr<Display>> displays_;
+    std::unordered_map<hwc2_display_t, std::shared_ptr<Display>> displays_;
 };
 
 }  // namespace floral::display

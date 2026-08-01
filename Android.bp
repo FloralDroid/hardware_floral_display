@@ -78,6 +78,26 @@ cc_library_static {
     export_include_dirs: ["include"],
 }
 
+cc_library_static {
+    name: "libfloral_display_topology_client",
+    defaults: ["floral_display_common_defaults"],
+    vendor_available: true,
+    header_libs: [
+        "libbase_headers",
+        "libcutils_headers",
+        "libhardware_headers",
+    ],
+    srcs: [
+        "src/AidlDisplayTopologySubscriber.cpp",
+    ],
+    shared_libs: [
+        "floral.display.topology-V1-ndk_platform",
+        "libbinder_ndk",
+        "liblog",
+    ],
+    export_include_dirs: ["include"],
+}
+
 cc_defaults {
     name: "floral_display_hwc2_defaults",
     defaults: ["floral_display_common_defaults"],
@@ -97,10 +117,12 @@ cc_library_shared {
     static_libs: [
         "libaidlcommonsupport",
         "libfloral_display_stream_bridge",
+        "libfloral_display_topology_client",
     ],
     shared_libs: [
         "android.hardware.common-V2-ndk_platform",
         "android.hardware.graphics.common-V2-ndk_platform",
+        "floral.display.topology-V1-ndk_platform",
         "floral.stream.display-V1-ndk_platform",
         "libbinder_ndk",
         "libcutils",
@@ -122,10 +144,12 @@ cc_test {
     static_libs: [
         "libaidlcommonsupport",
         "libfloral_display_stream_bridge",
+        "libfloral_display_topology_client",
     ],
     shared_libs: [
         "android.hardware.common-V2-ndk_platform",
         "android.hardware.graphics.common-V2-ndk_platform",
+        "floral.display.topology-V1-ndk_platform",
         "floral.stream.display-V1-ndk_platform",
         "libbinder_ndk",
         "libcutils",
@@ -137,6 +161,7 @@ cc_test {
         "src/DisplayRegistry.cpp",
         "src/Layer.cpp",
         "tests/AidlFrameConsumerEndpointTest.cpp",
+        "tests/AidlDisplayTopologySubscriberTest.cpp",
         "tests/DisplayConfigTest.cpp",
         "tests/DisplayFrameSinkTest.cpp",
         "tests/DisplayRefreshRateTest.cpp",

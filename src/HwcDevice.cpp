@@ -17,6 +17,7 @@
 #define LOG_TAG "hwcomposer.floral"
 
 #include "floral/display/HwcDevice.h"
+#include "floral/display/AidlDisplayTopologySubscriber.h"
 #include "floral/display/AidlFrameConsumerEndpoint.h"
 #include "floral/display/GraphicBufferClientTargetResolver.h"
 
@@ -24,6 +25,7 @@
 #include <log/log.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <type_traits>
 
@@ -38,11 +40,11 @@ hwc2_function_pointer_t AsFunction(Candidate candidate) {
 
 template <typename Method, typename... Args>
 int32_t WithDisplay(hwc2_device_t* device, hwc2_display_t displayId, Method method, Args... args) {
-    Display* display = HwcDevice::From(device)->GetDisplay(displayId);
+    std::shared_ptr<Display> display = HwcDevice::From(device)->GetDisplay(displayId);
     if (display == nullptr) {
         return HWC2_ERROR_BAD_DISPLAY;
     }
-    return (display->*method)(args...);
+    return (display.get()->*method)(args...);
 }
 
 int32_t CreateVirtualDisplay(hwc2_device_t* device, uint32_t width, uint32_t height,
@@ -346,14 +348,20 @@ HwcDevice::HwcDevice() {
                 (void)config;
                 return CreateStreamFrameSink(consumer, targetResolver);
             });
+    AidlDisplayTopologySubscriberConfig topologyConfig;
+    topologyConfig.service_loss_lease = std::chrono::milliseconds(
+            BoundedProperty("ro.boot.floral_control_disconnect_lease_ms", 3000, 100, 60'000));
+    topology_subscription_ =
+            CreateAidlDisplayTopologySubscription(std::move(topologyConfig), registry_.get());
 }
 
 HwcDevice::~HwcDevice() {
-    // Stop VSync threads before callback storage is destroyed.
+    // Stop topology callbacks before destroying displays and their VSync threads.
+    topology_subscription_.reset();
     registry_.reset();
 }
 
-Display* HwcDevice::GetDisplay(hwc2_display_t id) const {
+std::shared_ptr<Display> HwcDevice::GetDisplay(hwc2_display_t id) const {
     return registry_ == nullptr ? nullptr : registry_->Get(id);
 }
 
@@ -490,6 +498,20 @@ int32_t HwcDevice::RegisterCallback(int32_t descriptor, hwc2_callback_data_t cal
             return HWC2_ERROR_BAD_PARAMETER;
     }
 
+    if (descriptor == HWC2_CALLBACK_HOTPLUG) {
+        if (pointer == nullptr) {
+            registry_->SetHotplugCallback({});
+        } else {
+            const auto hotplug = reinterpret_cast<HWC2_PFN_HOTPLUG>(pointer);
+            registry_->SetHotplugCallback([callbackData, hotplug](hwc2_display_t display,
+                                                                  bool connected) {
+                hotplug(callbackData, display,
+                        connected ? HWC2_CONNECTION_CONNECTED : HWC2_CONNECTION_DISCONNECTED);
+            });
+        }
+        return HWC2_ERROR_NONE;
+    }
+
     {
         std::lock_guard lock(callback_mutex_);
         if (pointer == nullptr) {
@@ -499,12 +521,6 @@ int32_t HwcDevice::RegisterCallback(int32_t descriptor, hwc2_callback_data_t cal
         }
     }
 
-    if (descriptor == HWC2_CALLBACK_HOTPLUG && pointer != nullptr) {
-        const auto hotplug = reinterpret_cast<HWC2_PFN_HOTPLUG>(pointer);
-        for (const hwc2_display_t id : registry_->ConnectedDisplayIds()) {
-            hotplug(callbackData, id, HWC2_CONNECTION_CONNECTED);
-        }
-    }
     return HWC2_ERROR_NONE;
 }
 
@@ -516,7 +532,7 @@ std::string HwcDevice::Dump() const {
             "  encoding: external FrameSink service\n";
     if (registry_ != nullptr) {
         for (const hwc2_display_t id : registry_->ConnectedDisplayIds()) {
-            Display* display = registry_->Get(id);
+            const std::shared_ptr<Display> display = registry_->Get(id);
             if (display != nullptr) {
                 output += display->Dump();
             }

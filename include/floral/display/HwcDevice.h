@@ -27,6 +27,8 @@
 
 namespace floral::display {
 
+class DisplayTopologySubscription;
+
 class HwcDevice : public hwc2_device_t {
   public:
     HwcDevice();
@@ -37,7 +39,7 @@ class HwcDevice : public hwc2_device_t {
 
     static HwcDevice* From(hwc2_device_t* device) { return static_cast<HwcDevice*>(device); }
 
-    Display* GetDisplay(hwc2_display_t id) const;
+    std::shared_ptr<Display> GetDisplay(hwc2_display_t id) const;
     void GetCapabilities(uint32_t* outCount, int32_t* outCapabilities);
     hwc2_function_pointer_t GetFunction(int32_t descriptor);
     int32_t RegisterCallback(int32_t descriptor, hwc2_callback_data_t callbackData,
@@ -53,9 +55,14 @@ class HwcDevice : public hwc2_device_t {
     static DisplayConfig LoadPrimaryDisplayConfig();
     void EmitVsync(hwc2_display_t display, int64_t timestamp, int64_t periodNanos);
 
+    // Non-hotplug SurfaceFlinger callbacks. DisplayRegistry owns the hotplug
+    // callback so registration and topology mutations remain ordered.
     mutable std::mutex callback_mutex_;
     std::unordered_map<int32_t, CallbackEntry> callbacks_;
+
+    // Physical display registry and desired-topology subscription.
     std::unique_ptr<DisplayRegistry> registry_;
+    std::unique_ptr<DisplayTopologySubscription> topology_subscription_;
 };
 
 }  // namespace floral::display

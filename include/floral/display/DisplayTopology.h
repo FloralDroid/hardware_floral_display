@@ -25,6 +25,20 @@
 
 namespace floral::display {
 
+enum class DisplayTopologyResult : uint8_t {
+    kSuccess,
+    kInvalidConfig,
+    kAlreadyConnected,
+    kPortInUse,
+    kPrimaryDisplayProtected,
+    kNotFound,
+};
+
+struct DisplayTopologyChanges {
+    std::vector<DisplayId> disconnected_display_ids;
+    std::vector<DisplayConfig> connected_displays;
+};
+
 class DisplayTopology {
   public:
     static constexpr DisplayId kPrimaryDisplayId = 1;
@@ -32,6 +46,10 @@ class DisplayTopology {
     explicit DisplayTopology(DisplayConfig primaryConfig);
 
     std::optional<DisplayConfig> Get(DisplayId id) const;
+    DisplayTopologyResult ConnectExternal(DisplayConfig config);
+    DisplayTopologyResult Disconnect(DisplayId id);
+    DisplayTopologyResult ReplaceExternalDisplays(std::vector<DisplayConfig> configs,
+                                                  DisplayTopologyChanges* outChanges);
     std::vector<DisplayConfig> ConnectedDisplays() const;
 
   private:
