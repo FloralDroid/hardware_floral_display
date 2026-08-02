@@ -39,7 +39,7 @@ struct AidlDisplayTopologySubscriberConfig {
 
     // Tests may inject an in-process service. Production resolves the stable
     // VINTF AIDL instance through the service manager.
-    std::function<std::shared_ptr<aidl::floral::display::topology::IDisplayTopologyState>(
+    std::function<std::shared_ptr<aidl::floral::device::display::topology::IDisplayTopologyState>(
             const std::string& serviceName)>
             connector;
 };

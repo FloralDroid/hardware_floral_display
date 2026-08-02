@@ -42,9 +42,9 @@
 namespace floral::display {
 namespace {
 
-using AidlDisplaySpec = aidl::floral::display::topology::PhysicalDisplaySpec;
-using AidlDisplayTopologyState = aidl::floral::display::topology::IDisplayTopologyState;
-using AidlTopologySnapshot = aidl::floral::display::topology::TopologySnapshot;
+using AidlDisplaySpec = aidl::floral::device::display::topology::PhysicalDisplaySpec;
+using AidlDisplayTopologyState = aidl::floral::device::display::topology::IDisplayTopologyState;
+using AidlTopologySnapshot = aidl::floral::device::display::topology::TopologySnapshot;
 
 constexpr int32_t kMinimumDimension = 320;
 constexpr int32_t kMaximumDimension = 7680;
@@ -203,7 +203,8 @@ class TopologySnapshotApplier {
     bool stopping_ = false;
 };
 
-class TopologyListener final : public aidl::floral::display::topology::BnDisplayTopologyListener {
+class TopologyListener final
+    : public aidl::floral::device::display::topology::BnDisplayTopologyListener {
   public:
     TopologyListener(std::shared_ptr<TopologySnapshotApplier> applier, uint64_t epoch)
         : applier_(std::move(applier)), epoch_(epoch) {}

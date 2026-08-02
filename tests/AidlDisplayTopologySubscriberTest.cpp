@@ -36,12 +36,13 @@
 namespace floral::display {
 namespace {
 
-using AidlDisplaySpec = aidl::floral::display::topology::PhysicalDisplaySpec;
-using AidlDisplayTopologyListener = aidl::floral::display::topology::IDisplayTopologyListener;
-using AidlTopologySnapshot = aidl::floral::display::topology::TopologySnapshot;
+using AidlDisplaySpec = aidl::floral::device::display::topology::PhysicalDisplaySpec;
+using AidlDisplayTopologyListener =
+        aidl::floral::device::display::topology::IDisplayTopologyListener;
+using AidlTopologySnapshot = aidl::floral::device::display::topology::TopologySnapshot;
 
 class FakeDisplayTopologyState final
-    : public aidl::floral::display::topology::BnDisplayTopologyState {
+    : public aidl::floral::device::display::topology::BnDisplayTopologyState {
   public:
     explicit FakeDisplayTopologyState(AidlTopologySnapshot snapshot)
         : snapshot_(std::move(snapshot)) {}
