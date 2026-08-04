@@ -55,6 +55,9 @@ struct FrameSinkStats {
     uint64_t frames_with_buffer = 0;
     uint64_t frames_with_acquire_fence = 0;
     uint64_t returned_present_fences = 0;
+    uint64_t resolver_failures = 0;
+    uint64_t register_failures = 0;
+    uint64_t submit_failures = 0;
     uint64_t last_sequence = 0;
     int64_t last_submission_time_nanos = 0;
     int32_t last_dataspace = 0;

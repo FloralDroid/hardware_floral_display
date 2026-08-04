@@ -14,9 +14,13 @@
  * limitations under the License.
  */
 
+#define LOG_TAG "hwcomposer.floral"
+
 #include "floral/display/StreamFrameSink.h"
 
 #include <fcntl.h>
+#include <inttypes.h>
+#include <log/log.h>
 
 #include <mutex>
 #include <unordered_map>
@@ -30,6 +34,10 @@ android::base::unique_fd DuplicateFence(const android::base::unique_fd& fence) {
         return {};
     }
     return android::base::unique_fd(fcntl(fence.get(), F_DUPFD_CLOEXEC, 0));
+}
+
+bool ShouldLogFailure(uint64_t failureCount) {
+    return failureCount != 0 && (failureCount & (failureCount - 1)) == 0;
 }
 
 class StreamFrameSink final : public FrameSink {
@@ -54,8 +62,17 @@ class StreamFrameSink final : public FrameSink {
 
         ResolvedClientTarget target;
         if (!target_resolver_->Resolve(submission.buffer, submission.width, submission.height,
-                                       &target) ||
-            target.descriptor.protected_content) {
+                                       &target)) {
+            const uint64_t failures = RecordFailure(&FrameSinkStats::resolver_failures);
+            if (ShouldLogFailure(failures)) {
+                ALOGW("Client target resolution failed: display=%" PRIu64
+                      " sequence=%" PRIu64 " failures=%" PRIu64,
+                      submission.display_id, submission.sequence, failures);
+            }
+            return FinishSubmission(submission, hadAcquireFence,
+                                    std::move(submission.acquire_fence));
+        }
+        if (target.descriptor.protected_content) {
             return FinishSubmission(submission, hadAcquireFence,
                                     std::move(submission.acquire_fence));
         }
@@ -84,6 +101,13 @@ class StreamFrameSink final : public FrameSink {
 
         StreamFrameResult consumerResult = consumer_->SubmitFrame(std::move(request));
         if (consumerResult.status != FrameConsumerStatus::kAccepted) {
+            const uint64_t failures = RecordFailure(&FrameSinkStats::submit_failures);
+            if (ShouldLogFailure(failures)) {
+                ALOGW("Frame submission failed: display=%" PRIu64
+                      " sequence=%" PRIu64 " status=%d failures=%" PRIu64,
+                      submission.display_id, submission.sequence,
+                      static_cast<int32_t>(consumerResult.status), failures);
+            }
             InvalidateRegistration(target.identity, bufferId, consumerResult.status);
             return FinishSubmission(submission, hadAcquireFence,
                                     std::move(submission.acquire_fence));
@@ -121,7 +145,15 @@ class StreamFrameSink final : public FrameSink {
         registration.buffer_id = next_buffer_id_;
         registration.buffer = submission.buffer;
         registration.descriptor = target.descriptor;
-        if (consumer_->RegisterBuffer(registration) != FrameConsumerStatus::kAccepted) {
+        const FrameConsumerStatus status = consumer_->RegisterBuffer(registration);
+        if (status != FrameConsumerStatus::kAccepted) {
+            const uint64_t failures = RecordFailure(&FrameSinkStats::register_failures);
+            if (ShouldLogFailure(failures)) {
+                ALOGW("Buffer registration failed: display=%" PRIu64
+                      " generation=%u buffer=%" PRIu64 " status=%d failures=%" PRIu64,
+                      submission.display_id, generation, next_buffer_id_,
+                      static_cast<int32_t>(status), failures);
+            }
             return false;
         }
 
@@ -152,6 +184,11 @@ class StreamFrameSink final : public FrameSink {
         if (found != registered_buffers_.end() && found->second == bufferId) {
             registered_buffers_.erase(found);
         }
+    }
+
+    uint64_t RecordFailure(uint64_t FrameSinkStats::*counter) {
+        std::lock_guard lock(stats_mutex_);
+        return ++(stats_.*counter);
     }
 
     FrameSinkResult FinishSubmission(const FrameSubmission& submission, bool hadAcquireFence,

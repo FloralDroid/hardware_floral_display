@@ -217,6 +217,7 @@ TEST(StreamFrameSinkTest, ReturnsOriginalAcquireFenceWhenConsumerDropsFrame) {
     EXPECT_EQ(result.present_fence.get(), pipeFds[0]);
     EXPECT_EQ(consumer->register_count, 1u);
     EXPECT_EQ(consumer->submit_count, 1u);
+    EXPECT_EQ(sink->GetStats().submit_failures, 1u);
     close(pipeFds[1]);
 }
 
@@ -237,6 +238,41 @@ TEST(StreamFrameSinkTest, ReregistersBufferAfterConsumerReportsItUnknown) {
     EXPECT_EQ(consumer->register_count, 2u);
     ASSERT_EQ(consumer->submitted_buffer_ids.size(), 2u);
     EXPECT_NE(consumer->submitted_buffer_ids[0], consumer->submitted_buffer_ids[1]);
+    EXPECT_EQ(sink->GetStats().submit_failures, 1u);
+}
+
+TEST(StreamFrameSinkTest, CountsClientTargetResolutionFailures) {
+    auto consumer = std::make_shared<FakeFrameConsumer>();
+    consumer->state.generation = 1;
+    consumer->state.accepting_frames = true;
+    auto resolver = std::make_shared<FakeClientTargetResolver>();
+    resolver->resolve_success = false;
+    std::unique_ptr<FrameSink> sink = CreateStreamFrameSink(consumer, resolver);
+    ASSERT_NE(sink, nullptr);
+
+    native_handle_t buffer{};
+    sink->Submit(MakeSubmission(&buffer, -1, 1));
+
+    EXPECT_EQ(consumer->register_count, 0u);
+    EXPECT_EQ(consumer->submit_count, 0u);
+    EXPECT_EQ(sink->GetStats().resolver_failures, 1u);
+}
+
+TEST(StreamFrameSinkTest, CountsBufferRegistrationFailures) {
+    auto consumer = std::make_shared<FakeFrameConsumer>();
+    consumer->state.generation = 1;
+    consumer->state.accepting_frames = true;
+    consumer->register_status = FrameConsumerStatus::kUnsupportedBuffer;
+    auto resolver = std::make_shared<FakeClientTargetResolver>();
+    std::unique_ptr<FrameSink> sink = CreateStreamFrameSink(consumer, resolver);
+    ASSERT_NE(sink, nullptr);
+
+    native_handle_t buffer{};
+    sink->Submit(MakeSubmission(&buffer, -1, 1));
+
+    EXPECT_EQ(consumer->register_count, 1u);
+    EXPECT_EQ(consumer->submit_count, 0u);
+    EXPECT_EQ(sink->GetStats().register_failures, 1u);
 }
 
 TEST(StreamFrameSinkTest, DoesNotExportProtectedClientTarget) {
