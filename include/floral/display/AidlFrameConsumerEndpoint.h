@@ -36,6 +36,10 @@ struct AidlFrameConsumerEndpointConfig {
     std::vector<DisplayId> display_ids;
     std::chrono::milliseconds state_refresh_interval{250};
 
+    // Called by the state worker when a display starts accepting a new stream
+    // generation. Production uses this to request a fresh SurfaceFlinger frame.
+    std::function<void(DisplayId displayId)> stream_activation_callback;
+
     // Tests may provide a deterministic connector. Production uses the
     // service manager when this callback is empty.
     std::function<std::shared_ptr<aidl::floral::device::display::IFrameConsumer>(

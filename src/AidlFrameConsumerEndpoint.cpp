@@ -247,8 +247,18 @@ class AidlFrameConsumerEndpoint final : public FrameConsumerEndpoint {
                         cached.generation = static_cast<uint32_t>(state.generation);
                         cached.accepting_frames = state.acceptingFrames;
                     }
-                    std::lock_guard lock(mutex_);
-                    states_[displayId] = cached;
+                    bool streamActivated = false;
+                    {
+                        std::lock_guard lock(mutex_);
+                        const FrameConsumerStreamState previous = states_[displayId];
+                        streamActivated = !stopping_ && cached.accepting_frames &&
+                                          (!previous.accepting_frames ||
+                                           cached.generation != previous.generation);
+                        states_[displayId] = cached;
+                    }
+                    if (streamActivated && config_.stream_activation_callback) {
+                        config_.stream_activation_callback(displayId);
+                    }
                 }
             }
 

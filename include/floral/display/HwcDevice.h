@@ -53,6 +53,7 @@ class HwcDevice : public hwc2_device_t {
     };
 
     static DisplayConfig LoadPrimaryDisplayConfig();
+    void EmitRefresh(hwc2_display_t display);
     void EmitVsync(hwc2_display_t display, int64_t timestamp, int64_t periodNanos);
 
     // Non-hotplug SurfaceFlinger callbacks. DisplayRegistry owns the hotplug

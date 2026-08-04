@@ -334,6 +334,9 @@ HwcDevice::HwcDevice() {
     DisplayConfig primaryConfig = LoadPrimaryDisplayConfig();
     AidlFrameConsumerEndpointConfig endpointConfig;
     endpointConfig.display_ids = {primaryConfig.id};
+    endpointConfig.stream_activation_callback = [this](DisplayId displayId) {
+        EmitRefresh(displayId);
+    };
     const std::shared_ptr<FrameConsumerEndpoint> consumer =
             CreateAidlFrameConsumerEndpoint(std::move(endpointConfig));
     const std::shared_ptr<ClientTargetResolver> targetResolver =
@@ -552,6 +555,22 @@ DisplayConfig HwcDevice::LoadPrimaryDisplayConfig() {
     config.dpi = BoundedProperty("ro.boot.floral_dpi", 320, 72, 640);
     config.vsync_period_nanos = RefreshRateToVsyncPeriodNanos(selectedFramesPerSecond);
     return config;
+}
+
+void HwcDevice::EmitRefresh(hwc2_display_t display) {
+    CallbackEntry callback;
+    {
+        std::lock_guard lock(callback_mutex_);
+        const auto found = callbacks_.find(HWC2_CALLBACK_REFRESH);
+        if (found != callbacks_.end()) {
+            callback = found->second;
+        }
+    }
+
+    if (callback.pointer != nullptr) {
+        const auto refresh = reinterpret_cast<HWC2_PFN_REFRESH>(callback.pointer);
+        refresh(callback.data, display);
+    }
 }
 
 void HwcDevice::EmitVsync(hwc2_display_t display, int64_t timestamp, int64_t periodNanos) {

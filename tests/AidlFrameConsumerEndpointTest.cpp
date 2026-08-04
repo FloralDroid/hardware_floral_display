@@ -22,10 +22,12 @@
 #include <unistd.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <thread>
+#include <vector>
 
 namespace floral::display {
 namespace {
@@ -188,6 +190,63 @@ TEST(AidlFrameConsumerEndpointTest, StartsInactiveUntilStateIsRefreshed) {
 
     const FrameConsumerStreamState state = endpoint->GetStreamState(0);
     EXPECT_FALSE(state.accepting_frames);
+}
+
+TEST(AidlFrameConsumerEndpointTest, NotifiesEachNewActiveStreamGenerationOnce) {
+    auto service = ndk::SharedRefBase::make<FakeAidlFrameConsumer>();
+    std::mutex activationsMutex;
+    std::condition_variable activationsChanged;
+    std::vector<DisplayId> activations;
+
+    AidlFrameConsumerEndpointConfig config;
+    config.display_ids = {0};
+    config.state_refresh_interval = std::chrono::milliseconds(2);
+    config.connector = [service](const std::string&) { return service; };
+    config.stream_activation_callback = [&](DisplayId displayId) {
+        {
+            std::lock_guard lock(activationsMutex);
+            activations.push_back(displayId);
+        }
+        activationsChanged.notify_all();
+    };
+    std::shared_ptr<FrameConsumerEndpoint> endpoint =
+            CreateAidlFrameConsumerEndpoint(std::move(config));
+    ASSERT_NE(endpoint, nullptr);
+
+    const auto waitForActivations = [&](size_t count) {
+        std::unique_lock lock(activationsMutex);
+        return activationsChanged.wait_for(lock, std::chrono::milliseconds(200),
+                                           [&]() { return activations.size() >= count; });
+    };
+
+    service->SetStreamState(7, true);
+    ASSERT_TRUE(waitForActivations(1));
+    ASSERT_TRUE(WaitForActiveState(endpoint, 7));
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    {
+        std::lock_guard lock(activationsMutex);
+        ASSERT_EQ(activations, std::vector<DisplayId>({0}));
+    }
+
+    // A reconnect can advance the generation without the polling worker
+    // observing an intermediate inactive state.
+    service->SetStreamState(8, true);
+    ASSERT_TRUE(waitForActivations(2));
+    ASSERT_TRUE(WaitForActiveState(endpoint, 8));
+
+    service->SetStreamState(8, false);
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        if (!endpoint->GetStreamState(0).accepting_frames) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    ASSERT_FALSE(endpoint->GetStreamState(0).accepting_frames);
+    service->SetStreamState(8, true);
+    ASSERT_TRUE(waitForActivations(3));
+
+    std::lock_guard lock(activationsMutex);
+    EXPECT_EQ(activations, std::vector<DisplayId>({0, 0, 0}));
 }
 
 }  // namespace
