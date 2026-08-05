@@ -27,21 +27,23 @@ int64_t RefreshRateToVsyncPeriodNanos(uint32_t refreshRateHz) {
     return (1'000'000'000LL + refreshRateHz / 2) / refreshRateHz;
 }
 
-uint32_t SelectRefreshRateAtLeast(const std::vector<uint32_t>& supportedRefreshRatesHz,
-                                  uint32_t requestedRefreshRateHz) {
-    uint32_t nearestAtLeast = 0;
-    uint32_t maximum = 0;
+std::vector<uint32_t> LimitRefreshRates(const std::vector<uint32_t>& supportedRefreshRatesHz,
+                                        uint32_t maximumRefreshRateHz) {
+    std::vector<uint32_t> limited;
+    if (maximumRefreshRateHz == 0) {
+        return limited;
+    }
     for (const uint32_t refreshRateHz : supportedRefreshRatesHz) {
-        if (refreshRateHz == 0) {
-            continue;
-        }
-        maximum = std::max(maximum, refreshRateHz);
-        if (refreshRateHz >= requestedRefreshRateHz &&
-            (nearestAtLeast == 0 || refreshRateHz < nearestAtLeast)) {
-            nearestAtLeast = refreshRateHz;
+        if (refreshRateHz > 0 && refreshRateHz <= maximumRefreshRateHz) {
+            limited.push_back(refreshRateHz);
         }
     }
-    return nearestAtLeast != 0 ? nearestAtLeast : maximum;
+    // Preserve an exact mode for nonstandard caps such as 24 or 45 Hz while
+    // keeping every advertised SurfaceFlinger choice at or below the limit.
+    limited.push_back(maximumRefreshRateHz);
+    std::sort(limited.begin(), limited.end());
+    limited.erase(std::unique(limited.begin(), limited.end()), limited.end());
+    return limited;
 }
 
 }  // namespace floral::display

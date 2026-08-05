@@ -548,12 +548,10 @@ DisplayConfig HwcDevice::LoadPrimaryDisplayConfig() {
     DisplayConfig config;
     config.width = BoundedProperty("ro.boot.floral_width", 1920, 320, 7680);
     config.height = BoundedProperty("ro.boot.floral_height", 1080, 320, 4320);
-    config.supported_refresh_rates_hz = {15, 30, 60};
-    const uint32_t requestedFramesPerSecond = BoundedProperty("ro.boot.floral_fps", 60, 1, 60);
-    const uint32_t selectedFramesPerSecond =
-            SelectRefreshRateAtLeast(config.supported_refresh_rates_hz, requestedFramesPerSecond);
+    const uint32_t maximumFramesPerSecond = BoundedProperty("ro.boot.floral_fps", 60, 1, 60);
+    config.supported_refresh_rates_hz = LimitRefreshRates({15, 30, 60}, maximumFramesPerSecond);
     config.dpi = BoundedProperty("ro.boot.floral_dpi", 320, 72, 640);
-    config.vsync_period_nanos = RefreshRateToVsyncPeriodNanos(selectedFramesPerSecond);
+    config.vsync_period_nanos = RefreshRateToVsyncPeriodNanos(maximumFramesPerSecond);
     return config;
 }
 

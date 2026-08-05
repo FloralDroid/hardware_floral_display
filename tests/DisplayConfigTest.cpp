@@ -21,18 +21,16 @@
 namespace floral::display {
 namespace {
 
-TEST(DisplayConfigTest, SelectsLowestRefreshRateThatSatisfiesRequest) {
+TEST(DisplayConfigTest, LimitsAdvertisedRefreshRatesAndPreservesExactMaximum) {
     const std::vector<uint32_t> supported = {60, 15, 30, 0, 30};
 
-    EXPECT_EQ(SelectRefreshRateAtLeast(supported, 1), 15u);
-    EXPECT_EQ(SelectRefreshRateAtLeast(supported, 15), 15u);
-    EXPECT_EQ(SelectRefreshRateAtLeast(supported, 16), 30u);
-    EXPECT_EQ(SelectRefreshRateAtLeast(supported, 24), 30u);
-    EXPECT_EQ(SelectRefreshRateAtLeast(supported, 30), 30u);
-    EXPECT_EQ(SelectRefreshRateAtLeast(supported, 31), 60u);
-    EXPECT_EQ(SelectRefreshRateAtLeast(supported, 60), 60u);
-    EXPECT_EQ(SelectRefreshRateAtLeast(supported, 120), 60u);
-    EXPECT_EQ(SelectRefreshRateAtLeast({}, 30), 0u);
+    EXPECT_EQ(LimitRefreshRates(supported, 1), (std::vector<uint32_t>{1}));
+    EXPECT_EQ(LimitRefreshRates(supported, 15), (std::vector<uint32_t>{15}));
+    EXPECT_EQ(LimitRefreshRates(supported, 24), (std::vector<uint32_t>{15, 24}));
+    EXPECT_EQ(LimitRefreshRates(supported, 30), (std::vector<uint32_t>{15, 30}));
+    EXPECT_EQ(LimitRefreshRates(supported, 45), (std::vector<uint32_t>{15, 30, 45}));
+    EXPECT_EQ(LimitRefreshRates(supported, 60), (std::vector<uint32_t>{15, 30, 60}));
+    EXPECT_EQ(LimitRefreshRates(supported, 0), std::vector<uint32_t>{});
 }
 
 TEST(DisplayConfigTest, ConvertsRefreshRateToRoundedVsyncPeriod) {

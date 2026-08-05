@@ -13,7 +13,7 @@ Composer call path.
 
 - Composer/HWC2 2.4 dispatch surface.
 - One permanent `INTERNAL` physical display on port 0.
-- 15, 30, and 60 Hz configurations in one config group.
+- Refresh configurations up to the boot-time hard limit in one config group.
 - CLIENT composition only.
 - Monotonic VSync generation and stable Floral EDID identity.
 - FrameSink submission with sequence, dataspace, damage, and fence metadata.
@@ -59,12 +59,12 @@ The Floral display path reads these read-only boot properties:
 | --- | ---: | ---: | --- |
 | `ro.boot.floral_width` | `1920` | `320`-`7680` | Primary logical width in pixels. |
 | `ro.boot.floral_height` | `1080` | `320`-`4320` | Primary logical height in pixels. |
-| `ro.boot.floral_fps` | `60` | `1`-`60` | Requested primary refresh rate. |
+| `ro.boot.floral_fps` | `60` | `1`-`60` | Hard upper bound for primary refresh rate. |
 | `ro.boot.floral_dpi` | `320` | `72`-`640` | Primary density and `ro.sf.lcd_density`. |
 
-Invalid values fall back to deterministic defaults. Phase one caps the
-advertised refresh rate at 60 Hz. HWC selects the lowest advertised rate that
-is not lower than the request: 24 FPS selects 30 Hz and 45 FPS selects 60 Hz.
+Invalid values fall back to deterministic defaults. HWC never advertises a
+refresh mode above `ro.boot.floral_fps` and always includes the exact limit as a
+mode. For example, 30 publishes 15 and 30 Hz, while 24 publishes 15 and 24 Hz.
 All refresh configurations remain in one config group, so a switch does not
 change resolution, display identity, or Android logical display.
 
@@ -96,7 +96,7 @@ closed.
 
 - 提供 Composer/HWC2 2.4 调度接口。
 - 在端口 0 上保留一个永久存在的 `INTERNAL` 物理主屏。
-- 在同一配置组中提供 15、30 和 60 Hz 模式。
+- 在同一配置组中提供不高于启动硬上限的刷新率模式。
 - 仅使用 CLIENT 合成。
 - 生成单调递增的 VSync，并提供稳定的 Floral EDID 标识。
 - FrameSink 提交包含序列号、dataspace、damage 和 fence 元数据。
@@ -136,12 +136,13 @@ Floral 显示路径读取以下只读启动属性：
 | --- | ---: | ---: | --- |
 | `ro.boot.floral_width` | `1920` | `320`-`7680` | 主屏逻辑宽度，单位为像素。 |
 | `ro.boot.floral_height` | `1080` | `320`-`4320` | 主屏逻辑高度，单位为像素。 |
-| `ro.boot.floral_fps` | `60` | `1`-`60` | 请求的主屏刷新率。 |
+| `ro.boot.floral_fps` | `60` | `1`-`60` | 主屏刷新率硬上限。 |
 | `ro.boot.floral_dpi` | `320` | `72`-`640` | 主屏密度及 `ro.sf.lcd_density`。 |
 
-非法值会回退到确定的默认值。第一阶段最高发布 60 Hz。HWC 选择不低于请求值的
-最低已发布刷新率：例如 24 FPS 选择 30 Hz，45 FPS 选择 60 Hz。所有刷新率
-配置位于同一配置组，因此切换时不会改变分辨率、显示器身份或 Android 逻辑屏幕。
+非法值会回退到确定的默认值。HWC 不会发布高于 `ro.boot.floral_fps` 的刷新模式，
+并始终发布与上限完全一致的模式。例如上限 30 发布 15 和 30 Hz，上限 24 发布
+15 和 24 Hz。所有刷新率配置位于同一配置组，因此切换时不会改变分辨率、显示器
+身份或 Android 逻辑屏幕。
 
 ### 构建与 Android 版本
 
